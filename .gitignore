@@ -1,33 +1,4 @@
-# Бинарники
 petbot
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Файлы данных (ваши личные данные)
-data/
-analyses_photos/
-
-# Логи
-*.log
 bot.log
-
-# Временные файлы
-*.tmp
-*.swp
-*.swo
-*~
-
-# IDE
-.vscode/
-.idea/
-*.iml
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Go
-go.sum
+nohup.out
+*.log

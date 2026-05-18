@@ -8,6 +8,16 @@ import (
     "time"
 )
 
+func init() {
+    // Устанавливаем Московскую временную зону
+    loc, err := time.LoadLocation("Europe/Moscow")
+    if err != nil {
+        // Если не загрузилась, используем UTC+3
+        loc = time.FixedZone("MSK", 3*60*60)
+    }
+    time.Local = loc
+}
+
 type Medicine struct {
     Name        string   `json:"name"`
     Time        string   `json:"time"`
