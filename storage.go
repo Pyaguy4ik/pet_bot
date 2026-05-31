@@ -44,7 +44,7 @@ type PetData struct {
     Medicines  []Medicine `json:"medicines"`
     VetVisits  []VetVisit `json:"vet_visits"`
     Analyses   []Analysis `json:"analyses"`
-    NotifyChat int64      `json:"-"`
+    NotifyChat int64      `json:"notify_chat"`
     OverrideWeek string   `json:"override_week"` 
     mu         sync.Mutex
 }

@@ -14,8 +14,9 @@ import (
 var schedulerStarted = false
 
 func registerHandlers(b *tb.Bot) {
-    // Основные команды
+    // Команды
     b.RegisterHandler(tb.HandlerTypeMessageText, "/start", tb.MatchTypeExact, startHandler)
+    b.RegisterHandler(tb.HandlerTypeMessageText, "/menu", tb.MatchTypeExact, menuHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/daily", tb.MatchTypeExact, dailyHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/nextvet", tb.MatchTypeExact, nextVetHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/addvet", tb.MatchTypePrefix, addVetHandler)
@@ -27,94 +28,136 @@ func registerHandlers(b *tb.Bot) {
     b.RegisterHandler(tb.HandlerTypeMessageText, "/getanalysis", tb.MatchTypePrefix, getAnalysisHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/delanalysis", tb.MatchTypePrefix, delAnalysisHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/listanalysis", tb.MatchTypeExact, listAnalysisHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "/addmed", tb.MatchTypePrefix, addMedHandler)
+    b.RegisterHandler(tb.HandlerTypeMessageText, "/addmed", tb.MatchTypeExact, addMedHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/delmed", tb.MatchTypePrefix, delMedHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/editmed", tb.MatchTypePrefix, editMedHandler)
     b.RegisterHandler(tb.HandlerTypeMessageText, "/togglem ed", tb.MatchTypePrefix, toggleMedHandler)
+    b.RegisterHandler(tb.HandlerTypeMessageText, "/cancel", tb.MatchTypeExact, cancelHandler)
     
-    // Обработчики кнопок (текстовые сообщения)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "📅 План на сегодня", tb.MatchTypeExact, dailyHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "📊 Моя неделя", tb.MatchTypeExact, weekHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "💊 Все лекарства", tb.MatchTypeExact, medListHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "🏥 Ближайший визит", tb.MatchTypeExact, nextVetHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "❓ Помощь", tb.MatchTypeExact, helpHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "➕ Добавить визит", tb.MatchTypeExact, promptAddVetHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "🗑 Удалить визит", tb.MatchTypeExact, promptDelVetHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "💊 Добавить лекарство", tb.MatchTypeExact, promptAddMedHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "✏️ Редактировать лекарство", tb.MatchTypeExact, promptEditMedHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "📈 Анализы за дату", tb.MatchTypeExact, promptGetAnalysisHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "📋 Список анализов", tb.MatchTypeExact, listAnalysisHandler)
-    b.RegisterHandler(tb.HandlerTypeMessageText, "🔄 Переключить неделю", tb.MatchTypeExact, promptSetWeekHandler)
+    // Callback-обработчик для инлайн-кнопок
+    b.RegisterHandler(tb.HandlerTypeCallbackQueryData, "", tb.MatchTypePrefix, callbackHandler)
+    
+    // Обработчик текстовых сообщений для диалогов
+    b.RegisterHandler(tb.HandlerTypeMessageText, "", tb.MatchTypePrefix, textMessageHandler)
 }
 
+// ----------------------------------------------------------------
+//  СТАРТ (убираем reply-клавиатуру)
+// ----------------------------------------------------------------
 func startHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    storage.NotifyChat = update.Message.Chat.ID
     storage.Load()
+    storage.NotifyChat = update.Message.Chat.ID
+    storage.Save()
     
-    // Клавиатура с кнопками
-    keyboard := &models.ReplyKeyboardMarkup{
-        Keyboard: [][]models.KeyboardButton{
-            {
-                {Text: "📅 План на сегодня"},
-                {Text: "📊 Моя неделя"},
-            },
-            {
-                {Text: "💊 Все лекарства"},
-                {Text: "🏥 Ближайший визит"},
-            },
-            {
-                {Text: "➕ Добавить визит"},
-                {Text: "🗑 Удалить визит"},
-            },
-            {
-                {Text: "💊 Добавить лекарство"},
-                {Text: "✏️ Редактировать лекарство"},
-            },
-            {
-                {Text: "📈 Анализы за дату"},
-                {Text: "📋 Список анализов"},
-            },
-            {
-                {Text: "🔄 Переключить неделю"},
-                {Text: "❓ Помощь"},
-            },
-        },
-        ResizeKeyboard: true,
+    // Убираем старую reply-клавиатуру, если она была
+    removeKeyboard := &models.ReplyKeyboardRemove{
+        RemoveKeyboard: true,
     }
-    
-    msg := fmt.Sprintf(`🐱 Привет! Я бот для кота %s.
-
-👆 Используй кнопки внизу для управления.
-
-📌 Быстрые команды (можно вводить вручную):
-/daily - план на сегодня
-/week - текущая неделя
-/medlist - все лекарства
-/nextvet - ближайший визит
-/addvet YYYY-MM-DD HH:MM описание адрес
-/delvet YYYY-MM-DD
-/addmed Название|Время|Дозировка|дни|неделя
-/delmed "название"
-/editmed "название"|поле=значение
-/addanalysis ГГГГ-ММ-ДД показатель=значение
-/getanalysis ГГГГ-ММ-ДД
-/listanalysis
-
-Текущая неделя: %s`, storage.Name, getWeekType())
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID:      update.Message.Chat.ID,
-        Text:        msg,
-        ReplyMarkup: keyboard,
+        Text:        fmt.Sprintf("🐱 Привет! Я бот для кота %s.\n\nТекущая неделя: %s\n\nИспользуйте /menu для вызова главного меню.", storage.Name, getWeekType()),
+        ReplyMarkup: removeKeyboard,
     })
     
-    // Запускаем планировщик только один раз
     if !schedulerStarted {
         schedulerStarted = true
         startScheduler(b, update.Message.Chat.ID)
     }
 }
 
+// ----------------------------------------------------------------
+//  МЕНЮ (инлайн-кнопки под сообщением)
+// ----------------------------------------------------------------
+func menuHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
+    keyboard := &models.InlineKeyboardMarkup{
+        InlineKeyboard: [][]models.InlineKeyboardButton{
+            {
+                {Text: "📅 План на сегодня", CallbackData: "daily"},
+                {Text: "📊 Моя неделя", CallbackData: "week"},
+            },
+            {
+                {Text: "💊 Все лекарства", CallbackData: "medlist"},
+                {Text: "🏥 Ближайший визит", CallbackData: "nextvet"},
+            },
+            {
+                {Text: "➕ Добавить визит", CallbackData: "addvet_start"},
+                {Text: "🗑 Удалить визит", CallbackData: "delvet_prompt"},
+            },
+            {
+                {Text: "💊 Добавить лекарство", CallbackData: "addmed_start"},
+                {Text: "✏️ Редактировать лекарство", CallbackData: "editmed_start"},
+            },
+            {
+                {Text: "📈 Анализы за дату", CallbackData: "getanalysis_start"},
+                {Text: "📋 Список анализов", CallbackData: "listanalysis"},
+            },
+            {
+                {Text: "🔄 Переключить неделю", CallbackData: "setweek_start"},
+                {Text: "❓ Помощь", CallbackData: "help"},
+            },
+        },
+    }
+    
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID:      update.Message.Chat.ID,
+        Text:        "📋 Главное меню:",
+        ReplyMarkup: keyboard,
+    })
+}
+
+// ----------------------------------------------------------------
+//  ОБРАБОТЧИК INLINE-КНОПОК
+// ----------------------------------------------------------------
+func callbackHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.CallbackQuery.Message.Message.Chat.ID
+    data := update.CallbackQuery.Data
+    
+    b.AnswerCallbackQuery(ctx, &tb.AnswerCallbackQueryParams{
+        CallbackQueryID: update.CallbackQuery.ID,
+    })
+    
+    fakeUpdate := &models.Update{
+        Message: &models.Message{
+            Chat: models.Chat{ID: chatID},
+        },
+    }
+    
+    switch data {
+    case "daily":
+        dailyHandler(ctx, b, fakeUpdate)
+    case "week":
+        weekHandler(ctx, b, fakeUpdate)
+    case "medlist":
+        medListHandler(ctx, b, fakeUpdate)
+    case "nextvet":
+        nextVetHandler(ctx, b, fakeUpdate)
+    case "listanalysis":
+        listAnalysisHandler(ctx, b, fakeUpdate)
+    case "help":
+        helpHandler(ctx, b, fakeUpdate)
+    case "addvet_start":
+        startAddVetDialog(ctx, b, fakeUpdate)
+    case "delvet_prompt":
+        promptDelVetHandler(ctx, b, fakeUpdate)
+    case "addmed_start":
+        addMedHandler(ctx, b, fakeUpdate)
+    case "editmed_start":
+        startEditMedDialog(ctx, b, fakeUpdate)
+    case "getanalysis_start":
+        startGetAnalysisDialog(ctx, b, fakeUpdate)
+    case "setweek_start":
+        startSetWeekDialog(ctx, b, fakeUpdate)
+    default:
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "Неизвестная команда. Используйте /menu",
+        })
+    }
+}
+
+// ----------------------------------------------------------------
+//  ОСНОВНЫЕ ФУНКЦИИ (без изменений)
+// ----------------------------------------------------------------
 func dailyHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     plan := getDailyPlan()
     b.SendMessage(ctx, &tb.SendMessageParams{
@@ -250,82 +293,103 @@ func medListHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     })
 }
 
-// Добавление лекарства
+// ----------------------------------------------------------------
+//  ДИАЛОГИ
+// ----------------------------------------------------------------
 func addMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    text := strings.TrimPrefix(update.Message.Text, "/addmed ")
-    parts := strings.Split(text, "|")
-    
-    if len(parts) != 5 {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   `❌ Неверный формат!
-
-Правильный формат:
-/addmed Название|Время(ЧЧ:ММ)|Дозировка|Дни(пн,вт,ср)|Неделя(all/odd/even)
-
-Примеры:
-/addmed Креон|10:55|1/2 капсулы|пн,вт,ср,чт,пт,сб,вс|all
-/addmed Чистка зубов|22:00|обработка|пн,ср,пт|odd
-/addmed Витамины|09:00|1 мл|сб,вс|even
-
-Дни недели: пн, вт, ср, чт, пт, сб, вс
-Неделя: all (каждую), odd (1 неделя), even (2 неделя)`,
-        })
-        return
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    state := &UserState{
+        Step:   StepAddMedName,
+        AddMed: AddMedData{},
     }
-    
-    name := strings.TrimSpace(parts[0])
-    timeStr := strings.TrimSpace(parts[1])
-    dosage := strings.TrimSpace(parts[2])
-    daysStr := strings.TrimSpace(parts[3])
-    weekPattern := strings.TrimSpace(parts[4])
-    
-    if _, err := time.Parse("15:04", timeStr); err != nil {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   "❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30)",
-        })
-        return
-    }
-    
-    days := strings.Split(daysStr, ",")
-    validDays := map[string]bool{"пн": true, "вт": true, "ср": true, "чт": true, "пт": true, "сб": true, "вс": true}
-    for _, d := range days {
-        if !validDays[d] {
-            b.SendMessage(ctx, &tb.SendMessageParams{
-                ChatID: update.Message.Chat.ID,
-                Text:   "❌ Неверный формат дней. Используйте: пн,вт,ср,чт,пт,сб,вс",
-            })
-            return
-        }
-    }
-    
-    if weekPattern != "all" && weekPattern != "odd" && weekPattern != "even" {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   "❌ Неверный формат недели. Используйте: all, odd, even",
-        })
-        return
-    }
-    
-    storage.Medicines = append(storage.Medicines, Medicine{
-        Name:        name,
-        Time:        timeStr,
-        Dosage:      dosage,
-        Days:        days,
-        WeekPattern: weekPattern,
-        IsActive:    true,
-    })
-    storage.Save()
+    SetUserState(chatID, state)
     
     b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   fmt.Sprintf("✅ Лекарство добавлено!\n\n📋 %s\n⏰ %s\n💊 %s\n📅 Дни: %s\n📆 Неделя: %s",
-            name, timeStr, dosage, daysStr, weekPattern),
+        ChatID: chatID,
+        Text:   "💊 Давайте добавим новое лекарство.\n\nВведите НАЗВАНИЕ лекарства.\n\n(Для отмены отправьте /cancel)",
     })
 }
 
-// Удаление лекарства
+func startEditMedDialog(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    
+    if len(storage.Medicines) == 0 {
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "❌ Нет лекарств для редактирования. Сначала добавьте лекарство через /addmed",
+        })
+        return
+    }
+    
+    list := "📋 Список лекарств:\n\n"
+    for i, m := range storage.Medicines {
+        list += fmt.Sprintf("%d. %s\n", i+1, m.Name)
+    }
+    list += "\nВведите НАЗВАНИЕ лекарства, которое хотите редактировать.\n(Для отмены отправьте /cancel)"
+    
+    state := &UserState{
+        Step: StepEditMedSelect,
+    }
+    SetUserState(chatID, state)
+    
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID: chatID,
+        Text:   list,
+    })
+}
+
+func editMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
+    startEditMedDialog(ctx, b, update)
+}
+
+func startGetAnalysisDialog(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    
+    state := &UserState{
+        Step: StepGetAnalysisDate,
+    }
+    SetUserState(chatID, state)
+    
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID: chatID,
+        Text:   "📈 Введите дату в формате ГГГГ-ММ-ДД (например, 2026-04-01)\n\n(Для отмены отправьте /cancel)",
+    })
+}
+
+func startSetWeekDialog(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    
+    state := &UserState{
+        Step: StepSetWeek,
+    }
+    SetUserState(chatID, state)
+    
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID: chatID,
+        Text:   "🔄 Выберите режим недели:\n\n• odd — нечётная (1 неделя)\n• even — чётная (2 неделя)\n• auto — автоматический\n\nВведите: odd, even, auto\n\n(Для отмены отправьте /cancel)",
+    })
+}
+
+func startAddVetDialog(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    
+    state := &UserState{
+        Step:   StepAddVetDate,
+        AddVet: AddVetData{},
+    }
+    SetUserState(chatID, state)
+    
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID: chatID,
+        Text:   "🏥 Добавление нового визита.\n\nВведите ДАТУ в формате ГГГГ-ММ-ДД (например, 2026-05-20)\n\n(Для отмены отправьте /cancel)",
+    })
+}
+
 func delMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     name := strings.TrimPrefix(update.Message.Text, "/delmed ")
     name = strings.TrimSpace(name)
@@ -352,7 +416,7 @@ func delMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     if !found {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   fmt.Sprintf("❌ Лекарство \"%s\" не найдено. Используйте /medlist для просмотра списка", name),
+            Text:   fmt.Sprintf("❌ Лекарство \"%s\" не найдено", name),
         })
         return
     }
@@ -366,160 +430,6 @@ func delMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     })
 }
 
-// Редактирование лекарства
-func editMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    text := strings.TrimPrefix(update.Message.Text, "/editmed ")
-    parts := strings.Split(text, "|")
-    
-    if len(parts) < 2 {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   `❌ Формат редактирования:
-
-/editmed "старое название"|поле=значение
-
-Доступные поля:
-name - новое название
-time - новое время (ЧЧ:ММ)
-dosage - новая дозировка
-days - новые дни (пн,вт,ср)
-week - all/odd/even
-active - true/false
-
-Примеры:
-/editmed Креон|time=14:00
-/editmed Креон|dosage=1 капсула
-/editmed Креон|days=пн,ср,пт
-/editmed Креон|week=odd
-/editmed Креон|active=false`,
-        })
-        return
-    }
-    
-    oldName := strings.TrimSpace(parts[0])
-    oldName = strings.Trim(oldName, "\"'")
-    
-    index := -1
-    for i, m := range storage.Medicines {
-        if m.Name == oldName {
-            index = i
-            break
-        }
-    }
-    
-    if index == -1 {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   fmt.Sprintf("❌ Лекарство \"%s\" не найдено", oldName),
-        })
-        return
-    }
-    
-    med := &storage.Medicines[index]
-    changes := []string{}
-    
-    for i := 1; i < len(parts); i++ {
-        kv := strings.SplitN(parts[i], "=", 2)
-        if len(kv) != 2 {
-            continue
-        }
-        
-        field := strings.TrimSpace(kv[0])
-        value := strings.TrimSpace(kv[1])
-        
-        switch field {
-        case "name":
-            changes = append(changes, fmt.Sprintf("имя: %s → %s", med.Name, value))
-            med.Name = value
-        case "time":
-            if _, err := time.Parse("15:04", value); err == nil {
-                changes = append(changes, fmt.Sprintf("время: %s → %s", med.Time, value))
-                med.Time = value
-            } else {
-                b.SendMessage(ctx, &tb.SendMessageParams{
-                    ChatID: update.Message.Chat.ID,
-                    Text:   "❌ Неверный формат времени. Используйте ЧЧ:ММ",
-                })
-                return
-            }
-        case "dosage":
-            changes = append(changes, fmt.Sprintf("дозировка: %s → %s", med.Dosage, value))
-            med.Dosage = value
-        case "days":
-            days := strings.Split(value, ",")
-            validDays := map[string]bool{"пн": true, "вт": true, "ср": true, "чт": true, "пт": true, "сб": true, "вс": true}
-            valid := true
-            for _, d := range days {
-                if !validDays[d] {
-                    valid = false
-                    break
-                }
-            }
-            if valid {
-                changes = append(changes, fmt.Sprintf("дни: %s → %s", strings.Join(med.Days, ","), value))
-                med.Days = days
-            } else {
-                b.SendMessage(ctx, &tb.SendMessageParams{
-                    ChatID: update.Message.Chat.ID,
-                    Text:   "❌ Неверный формат дней. Используйте: пн,вт,ср,чт,пт,сб,вс",
-                })
-                return
-            }
-        case "week":
-            if value == "all" || value == "odd" || value == "even" {
-                changes = append(changes, fmt.Sprintf("неделя: %s → %s", med.WeekPattern, value))
-                med.WeekPattern = value
-            } else {
-                b.SendMessage(ctx, &tb.SendMessageParams{
-                    ChatID: update.Message.Chat.ID,
-                    Text:   "❌ Неверный формат недели. Используйте: all, odd, even",
-                })
-                return
-            }
-        case "active":
-            if value == "true" || value == "false" {
-                oldActive := "активно"
-                if !med.IsActive {
-                    oldActive = "неактивно"
-                }
-                newActive := "активно"
-                if value == "false" {
-                    newActive = "неактивно"
-                }
-                changes = append(changes, fmt.Sprintf("статус: %s → %s", oldActive, newActive))
-                med.IsActive = value == "true"
-            } else {
-                b.SendMessage(ctx, &tb.SendMessageParams{
-                    ChatID: update.Message.Chat.ID,
-                    Text:   "❌ active может быть true или false",
-                })
-                return
-            }
-        }
-    }
-    
-    storage.Save()
-    
-    if len(changes) == 0 {
-        b.SendMessage(ctx, &tb.SendMessageParams{
-            ChatID: update.Message.Chat.ID,
-            Text:   "❌ Не указаны изменения",
-        })
-        return
-    }
-    
-    msg := fmt.Sprintf("✅ Лекарство \"%s\" обновлено:\n\n", oldName)
-    for _, ch := range changes {
-        msg += "• " + ch + "\n"
-    }
-    
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   msg,
-    })
-}
-
-// Включение/выключение лекарства
 func toggleMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     name := strings.TrimPrefix(update.Message.Text, "/togglem ed ")
     name = strings.TrimSpace(name)
@@ -528,7 +438,7 @@ func toggleMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     if name == "" {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "❌ Формат: /togglem ed \"Название лекарства\"\n\nПример: /togglem ed Креон",
+            Text:   "❌ Формат: /togglem ed \"Название лекарства\"",
         })
         return
     }
@@ -537,12 +447,10 @@ func toggleMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         if m.Name == name {
             storage.Medicines[i].IsActive = !storage.Medicines[i].IsActive
             storage.Save()
-            
             status := "включено ✅"
             if !storage.Medicines[i].IsActive {
                 status = "выключено ❌"
             }
-            
             b.SendMessage(ctx, &tb.SendMessageParams{
                 ChatID: update.Message.Chat.ID,
                 Text:   fmt.Sprintf("🔄 Лекарство \"%s\" %s", name, status),
@@ -550,7 +458,6 @@ func toggleMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
             return
         }
     }
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID: update.Message.Chat.ID,
         Text:   fmt.Sprintf("❌ Лекарство \"%s\" не найдено", name),
@@ -588,7 +495,6 @@ func setWeekHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         })
         return
     }
-
     mode := parts[1]
     switch mode {
     case "odd":
@@ -596,41 +502,42 @@ func setWeekHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         storage.Save()
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "✅ Установлена РУЧНАЯ НЕЧЁТНАЯ (1) неделя\n\nИспользуйте /setweek auto для возврата к автоматическому режиму.",
+            Text:   "✅ Установлена РУЧНАЯ НЕЧЁТНАЯ (1) неделя",
         })
     case "even":
         storage.OverrideWeek = "even"
         storage.Save()
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "✅ Установлена РУЧНАЯ ЧЁТНАЯ (2) неделя\n\nИспользуйте /setweek auto для возврата к автоматическому режиму.",
+            Text:   "✅ Установлена РУЧНАЯ ЧЁТНАЯ (2) неделя",
         })
     case "auto":
         storage.OverrideWeek = ""
         storage.Save()
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "✅ Возврат к АВТОМАТИЧЕСКОМУ режиму\n\nБот будет определять чётность недели по ISO-стандарту.",
+            Text:   "✅ Возврат к АВТОМАТИЧЕСКОМУ режиму",
         })
     default:
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "❌ Неверный параметр. Используйте: /setweek odd, /setweek even или /setweek auto",
+            Text:   "❌ Неверный параметр. Используйте: odd, even, auto",
         })
     }
 }
 
-// --- Анализы ---
+// ----------------------------------------------------------------
+//  АНАЛИЗЫ
+// ----------------------------------------------------------------
 func addAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     parts := strings.Split(update.Message.Text, " ")
     if len(parts) < 3 {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "❌ Формат: /addanalysis ГГГГ-ММ-ДД показатель=значение\n\nПример: /addanalysis 2026-04-01 лейкоциты=8.2 глюкоза=5.1",
+            Text:   "❌ Формат: /addanalysis ГГГГ-ММ-ДД показатель=значение\nПример: /addanalysis 2026-04-01 лейкоциты=8.2",
         })
         return
     }
-    
     date := parts[1]
     if _, err := time.Parse("2006-01-02", date); err != nil {
         b.SendMessage(ctx, &tb.SendMessageParams{
@@ -639,7 +546,6 @@ func addAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         })
         return
     }
-    
     values := make(map[string]string)
     for i := 2; i < len(parts); i++ {
         kv := strings.SplitN(parts[i], "=", 2)
@@ -647,7 +553,6 @@ func addAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
             values[kv[0]] = kv[1]
         }
     }
-    
     if len(values) == 0 {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
@@ -655,7 +560,6 @@ func addAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         })
         return
     }
-    
     found := false
     for i, a := range storage.Analyses {
         if a.Date == date {
@@ -666,21 +570,17 @@ func addAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
             break
         }
     }
-    
     if !found {
         storage.Analyses = append(storage.Analyses, Analysis{
             Date:   date,
             Values: values,
         })
     }
-    
     storage.Save()
-    
     msg := fmt.Sprintf("✅ Анализы за %s сохранены:\n\n", date)
     for k, v := range values {
         msg += fmt.Sprintf("📊 %s: %s\n", k, v)
     }
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID: update.Message.Chat.ID,
         Text:   msg,
@@ -692,11 +592,10 @@ func getAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     if len(parts) != 2 {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "❌ Формат: /getanalysis ГГГГ-ММ-ДД\n\nПример: /getanalysis 2026-04-01",
+            Text:   "❌ Формат: /getanalysis ГГГГ-ММ-ДД",
         })
         return
     }
-    
     date := parts[1]
     for _, a := range storage.Analyses {
         if a.Date == date {
@@ -716,7 +615,6 @@ func getAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
             return
         }
     }
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID: update.Message.Chat.ID,
         Text:   fmt.Sprintf("❌ Нет анализов за %s", date),
@@ -728,11 +626,10 @@ func delAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     if len(parts) != 2 {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
-            Text:   "❌ Формат: /delanalysis ГГГГ-ММ-ДД\n\nПример: /delanalysis 2026-04-01",
+            Text:   "❌ Формат: /delanalysis ГГГГ-ММ-ДД",
         })
         return
     }
-    
     date := parts[1]
     newAnalyses := []Analysis{}
     for _, a := range storage.Analyses {
@@ -740,7 +637,6 @@ func delAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
             newAnalyses = append(newAnalyses, a)
         }
     }
-    
     if len(newAnalyses) == len(storage.Analyses) {
         b.SendMessage(ctx, &tb.SendMessageParams{
             ChatID: update.Message.Chat.ID,
@@ -748,10 +644,8 @@ func delAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
         })
         return
     }
-    
     storage.Analyses = newAnalyses
     storage.Save()
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID: update.Message.Chat.ID,
         Text:   fmt.Sprintf("🗑 Анализы за %s удалены", date),
@@ -766,69 +660,368 @@ func listAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) 
         })
         return
     }
-    
     msg := "📊 Список дат с анализами:\n\n"
     sort.Slice(storage.Analyses, func(i, j int) bool {
         return storage.Analyses[i].Date > storage.Analyses[j].Date
     })
-    
     for _, a := range storage.Analyses {
-        count := len(a.Values)
-        msg += fmt.Sprintf("📅 %s (%d показателей)\n", a.Date, count)
+        msg += fmt.Sprintf("📅 %s (%d показателей)\n", a.Date, len(a.Values))
     }
     msg += "\nЧтобы посмотреть анализы: /getanalysis ГГГГ-ММ-ДД"
-    
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID: update.Message.Chat.ID,
         Text:   msg,
     })
 }
 
-// --- Обработчики кнопок-подсказок ---
-func promptAddVetHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "➕ Чтобы добавить визит, введите команду:\n`/addvet 2026-05-20 14:30 Осмотр ул.Ленина 5`\n\n📅 Формат: `/addvet ГГГГ-ММ-ДД ЧЧ:ММ Описание Адрес`",
-        ParseMode: "Markdown",
-    })
+// ----------------------------------------------------------------
+//  ОСНОВНОЙ ОБРАБОТЧИК ДИАЛОГОВ (textMessageHandler)
+// ----------------------------------------------------------------
+func textMessageHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    text := strings.TrimSpace(update.Message.Text)
+    
+    if text == "/cancel" {
+        ClearUserState(chatID)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "✅ Диалог отменён.",
+        })
+        return
+    }
+    
+    if strings.HasPrefix(text, "/") {
+        return
+    }
+    
+    state := GetUserState(chatID)
+    if state.Step == StepNone {
+        return
+    }
+    
+    switch state.Step {
+    case StepAddMedName:
+        state.AddMed.Name = text
+        state.Step = StepAddMedTime
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "⏰ Введите время приёма (ЧЧ:ММ, например 10:55):\n(Для отмены /cancel)",
+        })
+    case StepAddMedTime:
+        if _, err := time.Parse("15:04", text); err != nil {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверный формат. Используйте ЧЧ:ММ. Попробуйте снова:\n(Для отмены /cancel)",
+            })
+            return
+        }
+        state.AddMed.Time = text
+        state.Step = StepAddMedDosage
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "💊 Введите дозировку (например: 1/2 капсулы):\n(Для отмены /cancel)",
+        })
+    case StepAddMedDosage:
+        state.AddMed.Dosage = text
+        state.Step = StepAddMedDays
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "📅 Введите дни недели через запятую (пн,вт,ср,чт,пт,сб,вс):\nПример: пн,ср,пт\n(Для отмены /cancel)",
+        })
+    case StepAddMedDays:
+        days := strings.Split(text, ",")
+        valid := true
+        for _, d := range days {
+            if !isValidDay(d) {
+                valid = false
+                break
+            }
+        }
+        if !valid {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверные дни. Используйте: пн, вт, ср, чт, пт, сб, вс. Попробуйте снова:\n(Для отмены /cancel)",
+            })
+            return
+        }
+        state.AddMed.Days = days
+        state.Step = StepAddMedWeekPattern
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "📆 На какой неделе давать?\n• all — каждую неделю\n• odd — только нечётная (1 неделя)\n• even — только чётная (2 неделя)\n\nВведите: all, odd или even\n(Для отмены /cancel)",
+        })
+    case StepAddMedWeekPattern:
+        pattern := strings.ToLower(text)
+        if pattern != "all" && pattern != "odd" && pattern != "even" {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверно. Введите: all, odd или even\n(Для отмены /cancel)",
+            })
+            return
+        }
+        newMed := Medicine{
+            Name:        state.AddMed.Name,
+            Time:        state.AddMed.Time,
+            Dosage:      state.AddMed.Dosage,
+            Days:        state.AddMed.Days,
+            WeekPattern: pattern,
+            IsActive:    true,
+        }
+        storage.Medicines = append(storage.Medicines, newMed)
+        storage.Save()
+        ClearUserState(chatID)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   fmt.Sprintf("✅ Лекарство добавлено!\n\n📋 %s\n⏰ %s\n💊 %s\n📅 Дни: %s\n📆 Неделя: %s",
+                newMed.Name, newMed.Time, newMed.Dosage, strings.Join(newMed.Days, ","), newMed.WeekPattern),
+        })
+    case StepEditMedSelect:
+        found := false
+        for _, m := range storage.Medicines {
+            if m.Name == text {
+                found = true
+                break
+            }
+        }
+        if !found {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Лекарство не найдено. Попробуйте снова или /cancel",
+            })
+            return
+        }
+        state.EditMedName = text
+        state.Step = StepEditMedField
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "✏️ Что хотите изменить?\nДоступные поля: name, time, dosage, days, week, active\n\nПример: time=14:00\n(Для отмены /cancel)",
+        })
+    case StepEditMedField:
+        kv := strings.SplitN(text, "=", 2)
+        if len(kv) != 2 {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверный формат. Используйте: поле=значение\nПример: time=14:00\n(Для отмены /cancel)",
+            })
+            return
+        }
+        field := kv[0]
+        value := kv[1]
+        index := -1
+        for i, m := range storage.Medicines {
+            if m.Name == state.EditMedName {
+                index = i
+                break
+            }
+        }
+        if index == -1 {
+            ClearUserState(chatID)
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Ошибка: лекарство не найдено",
+            })
+            return
+        }
+        med := &storage.Medicines[index]
+        switch field {
+        case "name":
+            med.Name = value
+        case "time":
+            if _, err := time.Parse("15:04", value); err != nil {
+                b.SendMessage(ctx, &tb.SendMessageParams{
+                    ChatID: chatID,
+                    Text:   "❌ Неверный формат времени. Используйте ЧЧ:ММ",
+                })
+                return
+            }
+            med.Time = value
+        case "dosage":
+            med.Dosage = value
+        case "days":
+            days := strings.Split(value, ",")
+            valid := true
+            for _, d := range days {
+                if !isValidDay(d) {
+                    valid = false
+                    break
+                }
+            }
+            if !valid {
+                b.SendMessage(ctx, &tb.SendMessageParams{
+                    ChatID: chatID,
+                    Text:   "❌ Неверные дни. Используйте: пн,вт,ср,чт,пт,сб,вс",
+                })
+                return
+            }
+            med.Days = days
+        case "week":
+            if value != "all" && value != "odd" && value != "even" {
+                b.SendMessage(ctx, &tb.SendMessageParams{
+                    ChatID: chatID,
+                    Text:   "❌ Неверно. Используйте: all, odd, even",
+                })
+                return
+            }
+            med.WeekPattern = value
+        case "active":
+            if value != "true" && value != "false" {
+                b.SendMessage(ctx, &tb.SendMessageParams{
+                    ChatID: chatID,
+                    Text:   "❌ active может быть true или false",
+                })
+                return
+            }
+            med.IsActive = value == "true"
+        default:
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неизвестное поле. Доступные: name, time, dosage, days, week, active",
+            })
+            return
+        }
+        storage.Save()
+        ClearUserState(chatID)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   fmt.Sprintf("✅ Лекарство обновлено!\n\n📋 %s\n⏰ %s\n💊 %s\n📅 Дни: %s\n📆 Неделя: %s\n🔘 Активно: %v",
+                med.Name, med.Time, med.Dosage, strings.Join(med.Days, ","), med.WeekPattern, med.IsActive),
+        })
+    case StepAddVetDate:
+        if _, err := time.Parse("2006-01-02", text); err != nil {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД (например, 2026-05-20). Попробуйте снова:\n(Для отмены /cancel)",
+            })
+            return
+        }
+        state.AddVet.Date = text
+        state.Step = StepAddVetTime
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "⏰ Введите ВРЕМЯ в формате ЧЧ:ММ (например, 14:30):\n(Для отмены /cancel)",
+        })
+    case StepAddVetTime:
+        if _, err := time.Parse("15:04", text); err != nil {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверный формат времени. Используйте ЧЧ:ММ (например, 14:30). Попробуйте снова:\n(Для отмены /cancel)",
+            })
+            return
+        }
+        state.AddVet.Time = text
+        state.Step = StepAddVetDescription
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "📝 Введите ОПИСАНИЕ визита (например, Плановый осмотр):\n(Для отмены /cancel)",
+        })
+    case StepAddVetDescription:
+        state.AddVet.Description = text
+        state.Step = StepAddVetAddress
+        SetUserState(chatID, state)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "📍 Введите АДРЕС ветклиники:\n(Для отмены /cancel)",
+        })
+    case StepAddVetAddress:
+        state.AddVet.Address = text
+        storage.VetVisits = append(storage.VetVisits, VetVisit{
+            Date:        state.AddVet.Date,
+            Time:        state.AddVet.Time,
+            Description: state.AddVet.Description,
+            Address:     state.AddVet.Address,
+        })
+        storage.Save()
+        ClearUserState(chatID)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   fmt.Sprintf("✅ Визит добавлен!\n\n📅 %s\n⏰ %s\n📝 %s\n📍 %s",
+                state.AddVet.Date, state.AddVet.Time, state.AddVet.Description, state.AddVet.Address),
+        })
+    case StepGetAnalysisDate:
+        if _, err := time.Parse("2006-01-02", text); err != nil {
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверный формат даты. Используйте ГГГГ-ММ-ДД (например, 2026-04-01). Попробуйте снова:\n(Для отмены /cancel)",
+            })
+            return
+        }
+        ClearUserState(chatID)
+        for _, a := range storage.Analyses {
+            if a.Date == text {
+                msg := fmt.Sprintf("📊 Анализы Папуша за %s:\n\n", text)
+                keys := make([]string, 0, len(a.Values))
+                for k := range a.Values {
+                    keys = append(keys, k)
+                }
+                sort.Strings(keys)
+                for _, k := range keys {
+                    msg += fmt.Sprintf("• %s: %s\n", k, a.Values[k])
+                }
+                b.SendMessage(ctx, &tb.SendMessageParams{
+                    ChatID: chatID,
+                    Text:   msg,
+                })
+                return
+            }
+        }
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   fmt.Sprintf("❌ Нет анализов за %s", text),
+        })
+    case StepSetWeek:
+        switch strings.ToLower(text) {
+        case "odd":
+            storage.OverrideWeek = "odd"
+            storage.Save()
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "✅ Установлена РУЧНАЯ НЕЧЁТНАЯ (1) неделя",
+            })
+        case "even":
+            storage.OverrideWeek = "even"
+            storage.Save()
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "✅ Установлена РУЧНАЯ ЧЁТНАЯ (2) неделя",
+            })
+        case "auto":
+            storage.OverrideWeek = ""
+            storage.Save()
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "✅ Возврат к АВТОМАТИЧЕСКОМУ режиму",
+            })
+        default:
+            b.SendMessage(ctx, &tb.SendMessageParams{
+                ChatID: chatID,
+                Text:   "❌ Неверно. Введите: odd, even или auto\n(Для отмены /cancel)",
+            })
+            return
+        }
+        ClearUserState(chatID)
+    default:
+        ClearUserState(chatID)
+        b.SendMessage(ctx, &tb.SendMessageParams{
+            ChatID: chatID,
+            Text:   "🔄 Диалог прерван. Начните заново.",
+        })
+    }
 }
 
+// ----------------------------------------------------------------
+//  ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// ----------------------------------------------------------------
 func promptDelVetHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "🗑 Чтобы удалить визит, введите команду:\n`/delvet 2026-05-20`\n\n📅 Формат: `/delvet ГГГГ-ММ-ДД`",
-        ParseMode: "Markdown",
-    })
-}
-
-func promptAddMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "💊 Чтобы добавить лекарство, используйте формат:\n`/addmed Название|Время|Дозировка|дни|неделя`\n\nПример:\n`/addmed Креон|10:55|1/2 капсулы|пн,вт,ср,чт,пт,сб,вс|all`\n\n📌 Дни: пн,вт,ср,чт,пт,сб,вс\n📌 Неделя: all (каждую), odd (1 неделя), even (2 неделя)",
-        ParseMode: "Markdown",
-    })
-}
-
-func promptEditMedHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "✏️ Чтобы редактировать лекарство:\n`/editmed \"Название\"|поле=значение`\n\nДоступные поля: name, time, dosage, days, week, active\n\nПримеры:\n`/editmed Креон|time=14:00`\n`/editmed Креон|active=false`",
-        ParseMode: "Markdown",
-    })
-}
-
-func promptGetAnalysisHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "📈 Чтобы посмотреть анализы за дату:\n`/getanalysis 2026-04-01`\n\n📅 Формат: `/getanalysis ГГГГ-ММ-ДД`",
-        ParseMode: "Markdown",
-    })
-}
-
-func promptSetWeekHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
-    b.SendMessage(ctx, &tb.SendMessageParams{
-        ChatID: update.Message.Chat.ID,
-        Text:   "🔄 Чтобы переключить неделю:\n`/setweek odd` — нечётная (1)\n`/setweek even` — чётная (2)\n`/setweek auto` — автоматически",
+        ChatID:    update.Message.Chat.ID,
+        Text:      "🗑 Чтобы удалить визит, введите:\n`/delvet 2026-05-20`\n\n(Для отмены /cancel)",
         ParseMode: "Markdown",
     })
 }
@@ -837,33 +1030,41 @@ func helpHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
     msg := `❓ **Помощь по командам**
 
 📅 **Планирование:**
-/daily - план на сегодня
-/week - текущая неделя
-/setweek odd/even/auto
+/daily, /week, /setweek
 
 🏥 **Визиты:**
-/addvet ГГГГ-ММ-ДД ЧЧ:ММ Описание Адрес
-/delvet ГГГГ-ММ-ДД
-/nextvet - ближайший визит
+/addvet, /delvet, /nextvet
 
 💊 **Лекарства:**
-/medlist - список
-/addmed Название|Время|Дозировка|дни|неделя
-/delmed "название"
-/editmed "название"|поле=значение
-/togglem ed "название"
+/medlist, /addmed, /delmed, /editmed, /togglem ed
 
 📊 **Анализы:**
-/addanalysis ГГГГ-ММ-ДД показатель=значение
-/getanalysis ГГГГ-ММ-ДД
-/delanalysis ГГГГ-ММ-ДД
-/listanalysis
+/addanalysis, /getanalysis, /delanalysis, /listanalysis
 
-👆 Также можно пользоваться кнопками внизу экрана.`
-    
+🛑 **Отмена диалога:**
+/cancel
+
+👆 Главное меню: /menu`
     b.SendMessage(ctx, &tb.SendMessageParams{
         ChatID:    update.Message.Chat.ID,
         Text:      msg,
         ParseMode: "Markdown",
     })
+}
+
+func cancelHandler(ctx context.Context, b *tb.Bot, update *models.Update) {
+    chatID := update.Message.Chat.ID
+    ClearUserState(chatID)
+    b.SendMessage(ctx, &tb.SendMessageParams{
+        ChatID: chatID,
+        Text:   "✅ Диалог отменён.",
+    })
+}
+
+func isValidDay(day string) bool {
+    switch day {
+    case "пн", "вт", "ср", "чт", "пт", "сб", "вс":
+        return true
+    }
+    return false
 }

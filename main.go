@@ -26,6 +26,7 @@ func main() {
                 Text:   "Неизвестная команда. Используйте /start",
             })
         }),
+        tb.WithCallbackQueryDataHandler("", tb.MatchTypePrefix, callbackHandler),
     }
 
     bot, err := tb.New(BotToken, opts...)
@@ -37,9 +38,13 @@ func main() {
 
     log.Println("🐱 Бот для кота Папуш запущен!")
     log.Println("Текущая неделя:", getWeekType())
-    
-    // НЕ ЗАПУСКАЕМ ПЛАНИРОВЩИК ЗДЕСЬ!
-    // Он запустится только при первом /start
+
+    if storage.NotifyChat != 0 {
+        log.Printf("Запуск планировщика для chatID=%d", storage.NotifyChat)
+        startScheduler(bot, storage.NotifyChat)
+    } else {
+        log.Println("ChatID не найден. Планировщик запустится после команды /start")
+    }
 
     bot.Start(ctx)
 }

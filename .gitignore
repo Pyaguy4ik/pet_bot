@@ -2,3 +2,4 @@ petbot
 bot.log
 nohup.out
 *.log
+data/pet_data.json
